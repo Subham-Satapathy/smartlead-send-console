@@ -7,7 +7,12 @@ export const DEFAULT_TIMEOUT_MS = 10_000
 
 // --- Feature flags ---
 // True when running against the in-browser mock backend rather than a real API.
-export const IS_MOCK = import.meta.env.VITE_USE_MOCK !== 'false' && !import.meta.env.VITE_API_BASE_URL
+// VITE_USE_MOCK explicitly overrides in either direction; unset, it defaults to
+// mock unless VITE_API_BASE_URL is provided.
+export const IS_MOCK =
+  import.meta.env.VITE_USE_MOCK === 'true' ? true :
+  import.meta.env.VITE_USE_MOCK === 'false' ? false :
+  !import.meta.env.VITE_API_BASE_URL
 // True when the real-time SSE push channel (src/queries/useEventStream.ts) is
 // available. Query hooks use this to pick their polling interval: fast
 // without push, slow (bounded-staleness fallback) with it.

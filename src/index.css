@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #f8fafc;
+}
+
+/* Tailwind's preflight resets <button> to cursor: default (unlike <a>,
+   which keeps pointer) -- restoring pointer app-wide here instead of
+   patching every button usage individually. Higher specificity than the
+   preflight rule already wins the cascade, but disabled buttons are
+   explicitly excluded so per-component disabled:cursor-not-allowed
+   utilities (see Button.tsx) still apply as intended. */
+button:not(:disabled) {
+  cursor: pointer;
+}

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import type { ColumnDef } from '@tanstack/react-table'
+import { createColumnHelper } from '@tanstack/react-table'
 import { RotateCw, X } from 'lucide-react'
 import { useEmails, useRetryEmail } from '@/queries/emails'
 import { useCampaigns } from '@/queries/misc'
 import { useMailboxOptions } from '@/queries/mailboxes'
 import { useDebouncedValue, useTicker } from '@/utils'
 import { DEFAULT_PAGE_SIZE, RELATIVE_TIME_TICK_MS, RETRYABLE_EMAIL_STATUSES, SEARCH_DEBOUNCE_MS } from '@/common/constants'
-import { VirtualTable } from '@/components/VirtualTable'
+import { DataTable } from '@/components/DataTable'
+import type { TableFeatureSet } from '@/components/tableFeatures'
 import { Pagination } from '@/components/Pagination'
 import { SearchInput, Select } from '@/components/Input'
 import { Button } from '@/components/Button'
@@ -17,6 +18,8 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { formatNextRetry, formatRelativeTime } from '@/utils/format'
 import { useToast } from '@/components/Toast'
 import type { Email } from '@/types/domain'
+
+const columnHelper = createColumnHelper<TableFeatureSet, Email>()
 
 /**
  * The emails list screen: search/filter/sort, a virtualized table, pagination,
@@ -138,69 +141,70 @@ export function EmailsPage() {
     )
   }
 
-  const columns: ColumnDef<Email, unknown>[] = useMemo(
-    () => [
-      {
-        id: 'recipient',
-        header: 'Recipient',
-        size: 320,
-        cell: ({ row }) => (
-          <div className="min-w-0">
-            <p className="truncate font-medium text-slate-900">{row.original.recipient}</p>
-            <p className="truncate text-xs text-slate-500">{row.original.subject}</p>
-          </div>
-        ),
-      },
-      {
-        id: 'status',
-        header: 'Status',
-        size: 110,
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      },
-      {
-        id: 'mailbox_id',
-        header: 'Mailbox',
-        size: 130,
-        cell: ({ row }) => <span className="font-mono text-xs text-slate-500">{row.original.mailbox_id}</span>,
-      },
-      {
-        id: 'attempts',
-        header: 'Attempts',
-        size: 90,
-        cell: ({ row }) => row.original.attempts,
-      },
-      {
-        id: 'scheduled_at',
-        header: 'Scheduled',
-        size: 130,
-        cell: ({ row }) => formatRelativeTime(row.original.scheduled_at),
-      },
-      {
-        id: 'next_retry_at',
-        header: 'Next retry',
-        size: 165, // wide enough for "Overdue by 23 mins"
-        cell: ({ row }) => formatNextRetry(row.original.next_retry_at),
-      },
-      {
-        id: 'actions',
-        header: '',
-        size: 120,
-        cell: ({ row }) =>
-          RETRYABLE_EMAIL_STATUSES.has(row.original.status) ? (
-            <Button
-              variant="secondary"
-              loading={retry.isPending && retry.variables?.id === row.original.id}
-              disabled={row.original.status === 'retrying'}
-              onClick={(e) => {
-                e.stopPropagation()
-                handleRetry(row.original)
-              }}
-            >
-              <RotateCw className="h-3.5 w-3.5" /> {row.original.status === 'retrying' ? 'Retrying…' : 'Retry'}
-            </Button>
-          ) : null,
-      },
-    ],
+  const columns = useMemo(
+    () =>
+      columnHelper.columns([
+        columnHelper.display({
+          id: 'recipient',
+          header: 'Recipient',
+          size: 320,
+          cell: ({ row }) => (
+            <div className="min-w-0">
+              <p className="truncate font-medium text-slate-900">{row.original.recipient}</p>
+              <p className="truncate text-xs text-slate-500">{row.original.subject}</p>
+            </div>
+          ),
+        }),
+        columnHelper.display({
+          id: 'status',
+          header: 'Status',
+          size: 110,
+          cell: ({ row }) => <StatusBadge status={row.original.status} />,
+        }),
+        columnHelper.display({
+          id: 'mailbox_id',
+          header: 'Mailbox',
+          size: 130,
+          cell: ({ row }) => <span className="font-mono text-xs text-slate-500">{row.original.mailbox_id}</span>,
+        }),
+        columnHelper.display({
+          id: 'attempts',
+          header: 'Attempts',
+          size: 90,
+          cell: ({ row }) => row.original.attempts,
+        }),
+        columnHelper.display({
+          id: 'scheduled_at',
+          header: 'Scheduled',
+          size: 130,
+          cell: ({ row }) => formatRelativeTime(row.original.scheduled_at),
+        }),
+        columnHelper.display({
+          id: 'next_retry_at',
+          header: 'Next retry',
+          size: 165, // wide enough for "Overdue by 23 mins"
+          cell: ({ row }) => formatNextRetry(row.original.next_retry_at),
+        }),
+        columnHelper.display({
+          id: 'actions',
+          header: '',
+          size: 120,
+          cell: ({ row }) =>
+            RETRYABLE_EMAIL_STATUSES.has(row.original.status) ? (
+              <Button
+                variant="secondary"
+                loading={retry.isPending && retry.variables?.id === row.original.id}
+                disabled={row.original.status === 'retrying'}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleRetry(row.original)
+                }}
+              >
+                <RotateCw className="h-3.5 w-3.5" /> {row.original.status === 'retrying' ? 'Retrying…' : 'Retry'}
+              </Button>
+            ) : null,
+        }),
+      ]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [retry.isPending, retry.variables],
   )
@@ -283,7 +287,7 @@ export function EmailsPage() {
         <InlineError error={query.error} onRetry={() => query.refetch()} />
       ) : (
         <>
-          <VirtualTable
+          <DataTable
             data={query.data?.items ?? []}
             columns={columns}
             getRowId={(e) => e.id}

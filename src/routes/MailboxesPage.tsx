@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { ColumnDef } from '@tanstack/react-table'
+import { createColumnHelper } from '@tanstack/react-table'
 import { PauseCircle, PlayCircle } from 'lucide-react'
 import { useMailboxes, useToggleMailboxPause } from '@/queries/mailboxes'
 import { useDebouncedValue, useTicker } from '@/utils'
 import { DEFAULT_PAGE_SIZE, RELATIVE_TIME_TICK_MS, SEARCH_DEBOUNCE_MS } from '@/common/constants'
-import { VirtualTable } from '@/components/VirtualTable'
+import { DataTable } from '@/components/DataTable'
+import type { TableFeatureSet } from '@/components/tableFeatures'
 import { Pagination } from '@/components/Pagination'
 import { SearchInput, Select } from '@/components/Input'
 import { Button } from '@/components/Button'
@@ -16,6 +17,8 @@ import { ToneBadge } from '@/components/StatusBadge'
 import { formatRelativeTime, mailboxHealthLabel } from '@/utils/format'
 import { useToast } from '@/components/Toast'
 import type { Mailbox } from '@/types/domain'
+
+const columnHelper = createColumnHelper<TableFeatureSet, Mailbox>()
 
 /**
  * The mailboxes list screen: search/filter/sort, a virtualized table, pagination,
@@ -132,84 +135,85 @@ export function MailboxesPage() {
     )
   }
 
-  const columns: ColumnDef<Mailbox, unknown>[] = useMemo(
-    () => [
-      {
-        id: 'email_address',
-        header: 'Mailbox',
-        size: mailboxColumnWidth,
-        cell: ({ row }) => <span className="font-medium text-slate-900">{row.original.email_address}</span>,
-      },
-      {
-        id: 'health',
-        header: 'Status',
-        size: 120,
-        cell: ({ row }) => {
-          const { label, tone } = mailboxHealthLabel(row.original)
-          return <ToneBadge label={label} tone={tone} className="w-[84px]" />
-        },
-      },
-      {
-        id: 'usage',
-        header: 'Sent / limit (hr)',
-        size: 160,
-        cell: ({ row }) => {
-          const m = row.original
-          const pct = Math.min(100, Math.round((m.sent_last_hour / Math.max(1, m.hourly_limit)) * 100))
-          return (
-            <div className="flex items-center gap-2">
-              <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200">
-                <div
-                  className={pct >= 90 ? 'h-full bg-red-500' : pct >= 70 ? 'h-full bg-amber-500' : 'h-full bg-emerald-500'}
-                  style={{ width: `${pct}%` }}
-                />
+  const columns = useMemo(
+    () =>
+      columnHelper.columns([
+        columnHelper.display({
+          id: 'email_address',
+          header: 'Mailbox',
+          size: mailboxColumnWidth,
+          cell: ({ row }) => <span className="font-medium text-slate-900">{row.original.email_address}</span>,
+        }),
+        columnHelper.display({
+          id: 'health',
+          header: 'Status',
+          size: 120,
+          cell: ({ row }) => {
+            const { label, tone } = mailboxHealthLabel(row.original)
+            return <ToneBadge label={label} tone={tone} className="w-[84px]" />
+          },
+        }),
+        columnHelper.display({
+          id: 'usage',
+          header: 'Sent / limit (hr)',
+          size: 160,
+          cell: ({ row }) => {
+            const m = row.original
+            const pct = Math.min(100, Math.round((m.sent_last_hour / Math.max(1, m.hourly_limit)) * 100))
+            return (
+              <div className="flex items-center gap-2">
+                <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className={pct >= 90 ? 'h-full bg-red-500' : pct >= 70 ? 'h-full bg-amber-500' : 'h-full bg-emerald-500'}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="text-xs text-slate-500">
+                  {m.sent_last_hour}/{m.hourly_limit}
+                </span>
               </div>
-              <span className="text-xs text-slate-500">
-                {m.sent_last_hour}/{m.hourly_limit}
-              </span>
-            </div>
-          )
-        },
-      },
-      {
-        id: 'pending_count',
-        header: 'Queued',
-        size: 90,
-        cell: ({ row }) => row.original.pending_count.toLocaleString(),
-      },
-      {
-        id: 'throttled_until',
-        header: 'Throttle clears',
-        size: 130,
-        cell: ({ row }) => formatRelativeTime(row.original.throttled_until),
-      },
-      {
-        id: 'actions',
-        header: '',
-        size: 140,
-        cell: ({ row }) => (
-          <Button
-            variant={row.original.paused ? 'primary' : 'secondary'}
-            loading={toggle.isPending && toggle.variables?.id === row.original.id}
-            className="w-[104px] justify-center"
-            onClick={(e) => {
-              e.stopPropagation()
-              handleToggle(row.original)
-            }}
-          >
-            {row.original.paused ? (
-              <>
-                <PlayCircle className="h-3.5 w-3.5" /> Resume
-              </>
-            ) : (
-              <>
-                <PauseCircle className="h-3.5 w-3.5" /> Pause
-              </>
-            )}
-          </Button>
-        ),
-      },
-    ],
+            )
+          },
+        }),
+        columnHelper.display({
+          id: 'pending_count',
+          header: 'Queued',
+          size: 90,
+          cell: ({ row }) => row.original.pending_count.toLocaleString(),
+        }),
+        columnHelper.display({
+          id: 'throttled_until',
+          header: 'Throttle clears',
+          size: 130,
+          cell: ({ row }) => formatRelativeTime(row.original.throttled_until),
+        }),
+        columnHelper.display({
+          id: 'actions',
+          header: '',
+          size: 140,
+          cell: ({ row }) => (
+            <Button
+              variant={row.original.paused ? 'primary' : 'secondary'}
+              loading={toggle.isPending && toggle.variables?.id === row.original.id}
+              className="w-[104px] justify-center"
+              onClick={(e) => {
+                e.stopPropagation()
+                handleToggle(row.original)
+              }}
+            >
+              {row.original.paused ? (
+                <>
+                  <PlayCircle className="h-3.5 w-3.5" /> Resume
+                </>
+              ) : (
+                <>
+                  <PauseCircle className="h-3.5 w-3.5" /> Pause
+                </>
+              )}
+            </Button>
+          ),
+        }),
+      ]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [toggle.isPending, toggle.variables, mailboxColumnWidth],
   )
@@ -251,7 +255,7 @@ export function MailboxesPage() {
         <InlineError error={query.error} onRetry={() => query.refetch()} />
       ) : (
         <>
-          <VirtualTable
+          <DataTable
             data={query.data?.items ?? []}
             columns={columns}
             getRowId={(m) => m.id}

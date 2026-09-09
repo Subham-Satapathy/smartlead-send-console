@@ -11,7 +11,7 @@ npm install
 npm run dev       # http://localhost:5173
 ```
 
-No backend required by default — the app runs against an in-browser mock backend (MSW), seeded with 50 mailboxes, 10 campaigns, and 50,000 scheduled emails. A background simulator continuously advances state (sends complete, retries resolve, mailboxes throttle), so "live system" behavior is real, not just described.
+Requires the real backend — see "Pointing it at the real API" below.
 
 Other scripts:
 
@@ -31,7 +31,6 @@ This console pairs with a real backend: [`SmartLead.ai BE`](../SmartLead.ai%20BE
 cp .env.example .env
 # edit .env:
 VITE_API_BASE_URL=http://184.193.207.246:4000
-VITE_USE_MOCK=false
 ```
 
 To run the BE yourself instead:
@@ -43,7 +42,7 @@ npm run api      # :4000 — what the FE talks to
 npm run worker   # advances state; without it, everything stays "pending" forever
 ```
 
-Setting `VITE_API_BASE_URL` disables the mock automatically — its module (and `faker`/`msw`) is dynamically imported only when needed, so it's excluded from the production bundle when pointed at a real backend (`npm run build` splits it into its own chunk). The BE's domain model doesn't map one-to-one onto this FE's — its lightweight API derives or additively backs everything, so from this FE's side it's the same `/mailboxes`, `/emails`, `/campaigns`, `/events` surface either way.
+The BE's domain model doesn't map one-to-one onto this FE's — its lightweight API derives or additively backs everything, so from this FE's side it's the same `/mailboxes`, `/emails`, `/campaigns`, `/events` surface either way.
 
 ## What's here
 
@@ -52,7 +51,7 @@ Two connected screens, per the brief:
 - **Mailboxes** (`/mailboxes`) — searchable/filterable/sortable list with live stats (sent-vs-limit, queued count, throttle countdown), and a detail view (`/mailboxes/:id`) with a plain-language "why is it in this state" explanation, what's queued on it, and a pause/unpause action.
 - **Emails** (`/emails`) — a virtualized list across all 50,000+ rows with server-side search/filter/sort, and a detail view (`/emails/:id`) with attempts, last error, a "what happens next" explanation, a status-history timeline, and a retry action.
 
-Both screens cross-link (a mailbox chip on an email jumps to that mailbox; a mailbox's queue links into the filtered Emails view), and a top-bar **Network** control dials the mock's latency/failure rate (`clean` / `normal` / `degraded`) to demo resilience on demand.
+Both screens cross-link (a mailbox chip on an email jumps to that mailbox; a mailbox's queue links into the filtered Emails view).
 
 ## Architecture
 
@@ -66,13 +65,10 @@ src/
                rollback-on-error, and the SSE subscription live here —
                components never touch the API client directly.
   routes/      The four screens (Mailboxes/Mailbox detail/Emails/Email detail).
-  components/  Reusable UI: VirtualTable, StatusBadge, Timeline, Toast,
+  components/  Reusable UI: DataTable, StatusBadge, Timeline, Toast,
                ConfirmDialog, FreshnessIndicator.
-  mocks/       The in-browser mock backend (MSW): seed data, a live-state
-               simulator (tickSimulation), chaos controls, and handlers.
-               Only loaded when VITE_USE_MOCK is active.
-  common/      constants/index.ts — poll intervals, page sizes, feature flags,
-               read from one place instead of duplicated per file.
+  common/      constants/index.ts — poll intervals, page sizes, and other
+               tunables read from one place instead of duplicated per file.
   utils/       Small hooks and helpers: debounce, relative-time formatting,
                visibility tracking, a tiny external store.
 ```
@@ -96,7 +92,7 @@ The brief asks to pick one or two of the "reality" conditions (scale, latency/fa
 **Live state & trustworthy actions.** Mutations (`retry`, `pause`/`unpause`) use React Query's optimistic-update pattern: the UI reflects the *intended* state immediately, but that's explicitly not the same as claiming success — the mutation's own response and the next poll/push both have to agree before anything is presented as done. A failed mutation rolls back and shows an error toast, not a false positive.
 - List/detail views poll (visibility-aware) with a persistent "Updated Ns ago" indicator, so staleness is always visible rather than masquerading as live truth.
 - Against the real backend, an app-wide SSE subscription (`useEventStream`) is the primary update mechanism — ~875ms end-to-end for a change made outside the tab, versus 8–45s for poll-only — with polling widened afterward as a fallback (e.g. the emails list: 8s → 45s), not the thing doing the work. Push also scales with concurrent viewers better than polling: one DB listener fans out to any number of open tabs, instead of each tab running its own poll loop against the same endpoint.
-- I deliberately didn't build deep resilience for raw request failure beyond the essentials: timeout, one bounded retry-with-backoff on GETs, no auto-retry on mutations, typed error states with a manual retry affordance, and the "Network: degraded" control to make it demonstrable. Conscious tradeoff — see "What I'd cut."
+- I deliberately didn't build deep resilience for raw request failure beyond the essentials: timeout, one bounded retry-with-backoff on GETs, no auto-retry on mutations, and typed error states with a manual retry affordance. Conscious tradeoff — see "What I'd cut."
 
 **State management: React Query over Redux/Zustand.** The hard problems here — cache invalidation, polling, retry/backoff, optimistic updates with rollback, request de-duplication — are exactly what it's built for.
 
@@ -118,9 +114,8 @@ Written originally against no real API — the brief describes the surface as "s
 
 `npm run test` — focused, not exhaustive:
 - `src/utils/format.test.ts` — relative-time formatting and mailbox health-state priority (paused > throttled > active).
-- `src/mocks/store.test.ts` — the mock's state machine: retry rejection rules, and mailbox queue-count not drifting as emails move between statuses.
 
-Beyond `tsc -b`, `vitest run`, and `npm run build`, I drove the running app end-to-end in headless Chromium (search/filter/sort, pause/unpause, retry, both detail pages, the Network preset switcher) to visually confirm each state, not just that the build succeeds. That pass — first against the mock, then again against the real backend — is what surfaced the bugs below.
+Beyond `tsc -b`, `vitest run`, and `npm run build`, I drove the running app end-to-end in headless Chromium against the real backend (search/filter/sort, pause/unpause, retry, both detail pages) to visually confirm each state, not just that the build succeeds. That pass is what surfaced the bugs below.
 
 ## Bugs found & fixed
 
@@ -137,14 +132,13 @@ queryClient.setQueriesData({ queryKey: ['mailboxes'] }, (old) => {
 })
 ```
 
-`['mailboxes']` matches by prefix — it hits every cached list page *and* the single-mailbox detail query, which has no `.items`. Whenever that mailbox's own detail page was open (exactly when you'd click its pause button), `.items.map` threw inside `onMutate`, which fails silently before any request is sent. The mock never caught it because my test pass always paused from the list page first. Fixed two ways: an `Array.isArray(old.items)` guard as an immediate patch, then restructuring `queryKeys` so list and detail keys are disjoint prefixes (`['mailboxes','list',...]` vs `['mailboxes','detail',id]`) — removing the hazard structurally instead of trusting every call site to remember the guard.
+`['mailboxes']` matches by prefix — it hits every cached list page *and* the single-mailbox detail query, which has no `.items`. Whenever that mailbox's own detail page was open (exactly when you'd click its pause button), `.items.map` threw inside `onMutate`, which fails silently before any request is sent. My earlier test passes never caught it because they always paused from the list page first. Fixed two ways: an `Array.isArray(old.items)` guard as an immediate patch, then restructuring `queryKeys` so list and detail keys are disjoint prefixes (`['mailboxes','list',...]` vs `['mailboxes','detail',id]`) — removing the hazard structurally instead of trusting every call site to remember the guard.
 
 **Queue breakdown wrong at scale, not just imprecise.** The mailbox queue breakdown was computed client-side from a 100-row cap (50 pending + 50 retrying). The "sample of X of Y" disclosure was honest about the *count*, but on a real, busy mailbox (432 queued) the campaign *ranking* built from a 59-row sample put the wrong campaign in first place — the true top campaign (66 emails) wasn't even the sample's top pick (48, third place). A partial sample can't be patched into a correct ranking. Fixed by adding a true server-side aggregate (`GET /mailboxes/:id/queue-summary`, `GROUP BY campaign_id` over every queued row) and pointing the UI at it.
 
 ## What I'd cut, change, or do next
 
 - **URL-sync filters on `MailboxesPage`** — `EmailsPage` has this now; `MailboxesPage` doesn't, since nothing currently deep-links into it. The same failure mode would appear the moment something does.
-- **Configurable chaos against the real backend** — the mock's "Network: degraded" control has no real-API equivalent; the worker's failure rates are set at process start, not runtime-adjustable.
 - **Multi-operator awareness** — a lightweight "changed by someone else since you loaded it" signal, using `/events` as a changefeed.
 - **Bulk actions** (retry-all-failed-in-campaign, pause-all-throttled) — out of scope for "at least one corrective action," but the natural next ask.
 - **Column virtualization / server-driven column config** if the email schema grows.

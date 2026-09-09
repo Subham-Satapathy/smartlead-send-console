@@ -1,11 +1,7 @@
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { NavLink } from 'react-router-dom'
 import { clsx } from 'clsx'
-import { ChevronDown, Inbox, Mail, Send, Wifi } from 'lucide-react'
-import { PRESETS, chaosStore, setChaosPreset } from '@/mocks/chaos'
-import { useSyncExternalStore } from 'react'
+import { Inbox, Mail, Send } from 'lucide-react'
 import { useStats } from '@/queries/misc'
-import { IS_MOCK } from '@/common/constants'
 
 /**
  * The app's wordmark and icon.
@@ -63,43 +59,7 @@ function StatPill({ value, label, tone }: { value: number; label: string; tone: 
 }
 
 /**
- * Dropdown for switching the mock backend's simulated network conditions (mock mode only).
- * @returns The rendered dropdown control.
- */
-function ChaosControl() {
-  const { preset } = useSyncExternalStore(chaosStore.subscribe, chaosStore.get)
-
-  return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button className="flex items-center gap-1.5 rounded-md border border-surface-border bg-white px-2.5 py-1 text-xs text-slate-600 shadow-sm hover:bg-slate-50">
-          <Wifi className="h-3 w-3" />
-          Network: <span className="font-medium capitalize text-slate-900">{preset}</span>
-          <ChevronDown className="h-3 w-3 text-slate-400" />
-        </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          className="z-50 min-w-[180px] rounded-md border border-surface-border bg-white p-1 text-sm shadow-lg"
-        >
-          {Object.keys(PRESETS).map((key) => (
-            <DropdownMenu.Item
-              key={key}
-              onSelect={() => setChaosPreset(key as keyof typeof PRESETS)}
-              className="cursor-pointer rounded px-2 py-1.5 capitalize text-slate-600 outline-none hover:bg-slate-50 data-[highlighted]:bg-slate-50"
-            >
-              {key}
-            </DropdownMenu.Item>
-          ))}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
-  )
-}
-
-/**
- * The app's sticky header: logo, nav links, live stat counters, and (in mock mode) the chaos control.
+ * The app's sticky header: logo, nav links, and live stat counters.
  * @returns The rendered header.
  */
 export function TopBar() {
@@ -125,7 +85,6 @@ export function TopBar() {
               <StatPill value={stats.emails_dead} label="dead" tone="danger" />
             </div>
           )}
-          {IS_MOCK && <ChaosControl />}
         </div>
       </div>
     </header>

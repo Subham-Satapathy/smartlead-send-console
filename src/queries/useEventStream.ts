@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api'
-import { API_BASE_URL, EVENT_STREAM_FLUSH_INTERVAL_MS, HAS_EVENT_STREAM } from '@/common/constants'
+import { API_BASE_URL, EVENT_STREAM_FLUSH_INTERVAL_MS } from '@/common/constants'
 import type { Mailbox } from '@/types/domain'
 import { queryKeys } from './keys'
 
@@ -16,16 +16,13 @@ interface PushedEvent {
  * Subscribes once, app-wide, to the backend's SSE push channel and
  * invalidates the relevant query cache entries when something changes.
  * Layered on top of each query's own refetchInterval, not a replacement —
- * ordinary polling still bounds staleness if the connection drops. Only
- * used against the real backend; the mock drives its demo via polling.
+ * ordinary polling still bounds staleness if the connection drops.
  * @returns Nothing; the hook only produces side effects (subscribing/invalidating).
  */
 export function useEventStream() {
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    if (!HAS_EVENT_STREAM) return
-
     const source = new EventSource(`${API_BASE_URL}/events/stream`)
 
     let visible = document.visibilityState === 'visible'
